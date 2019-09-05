@@ -1,0 +1,126 @@
+{\rtf1\ansi\ansicpg1252\cocoartf1671\cocoasubrtf600
+{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;\red32\green30\blue29;\red255\green255\blue255;}
+{\*\expandedcolortbl;;\cssrgb\c16863\c15686\c14902;\cssrgb\c100000\c100000\c100000;}
+\margl1440\margr1440\vieww10800\viewh9420\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 This project started because managed code in the Salesforce Billing package prevented execution of a recursive process.\
+\
+Salesforce Support found that this is a known issue and provided instructions for a workaround, as follows:\
+\
+\pard\pardeftab720\sl320\partightenfactor0
+
+\fs28 \cf2 \cb3 \expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Recursive saves can happen if there is a process that updates the child OrderItems. To resolve the limitation, please try the below solution:-\'a0\
+\
+1. Create a custom field on Order object to keep track recursive save.\'a0\
+\
+API Name: any name suitable to your business requirement.\
+Data Type: Checkbox\'a0\
+	[I named it Trigger__c]\
+\
+2. Create an Apex Class to keep track of whether or not the current transaction has a recursive save for Order due to changes in OrderItem.\'a0\
+\
+public Class OrderRecursiveSave \{\'a0\
+\
+private static boolean isRecursive = false;\'a0\
+\
+public static void triggerRollup() \{\'a0\
+\
+isRecursive = true;\'a0\
+\
+\}\'a0\
+\
+public static boolean isInRecursive() \{\'a0\
+\
+return isRecursive;\'a0\
+\
+\}\'a0\
+\
+\}\'a0\
+\
+3. Create a trigger on Order to reset the recursive save flag every time Order is modified if-and-only-if it's not in a recursive save.\'a0\
+\
+trigger OrderTrigger on Order (before insert, before update) \{\'a0\
+\
+if (!OrderRecursiveSave.isInRecursive()) \{\'a0\
+\
+for (Order order : Trigger.new) \{\'a0\
+\
+order.Trigger__c = false;\'a0\
+\
+\}\'a0\
+\
+\}\'a0\
+\
+\}\'a0\
+\
+4. Create a trigger on OrderItem to set the recursive save flag manually since changes in OrderItem will trigger a recalculation on the associated Order.\'a0\
+\
+trigger OrderItemTrigger on OrderItem (after insert, after update, after delete) \{\'a0\
+\
+OrderRecursiveSave.triggerRollup();\'a0\
+\
+Set<String> orderIds = new Set<String>();\'a0\
+\
+// Collect associated Order Ids\'a0\
+\
+if (Trigger.isDelete) \{\'a0\
+\
+for (OrderItem orderItem : Trigger.old) \{\'a0\
+\
+orderIds.add(orderItem.OrderId);\'a0\
+\
+\}\'a0\
+\
+\} else \{\'a0\
+\
+for (OrderItem orderItem : Trigger.new) \{\'a0\
+\
+orderIds.add(orderItem.OrderId);\'a0\
+\
+\}\'a0\
+\
+\}\'a0\
+\
+// Mark the associated Order to be saved recursively\'a0\
+\
+if (!orderIds.isEmpty()) \{\'a0\
+\
+List<Order> orders = new List<Order>();\'a0\
+\
+for (String orderId : orderIds) \{\'a0\
+\
+orders.add(new Order(Id = orderId, Trigger__c = true));\'a0\
+\
+\}\'a0\
+\
+update orders;\'a0\
+\
+\}\'a0\
+\
+\}\'a0\
+\
+5. Update the process to include additional criteria:\'a0\
+\
+Conditions are met: [Order].Trigger__c equals False.\'a0\
+\
+[end instructions from Salesforce Support]\
+\
+*\
+
+\fs24 The process is called Order Process. When an Order record is created or edited, it checks these conditions for \'93Billing Contact entered\'94:\
+\
+(ISBLANK(\
+PRIORVALUE( [Order].BillToContactId  ) ) &&  \
+NOT(\
+ ISBLANK(  [Order].BillToContactId)  )  )\
+&&\
+[Order].Trigger__c = FALSE\
+\
+When these conditions are true, it calls a flow called Billing Account Flow.\
+\
+Please let me know if you have any questions. My email is wayne@thefutureperfect.com\
+\
+}
